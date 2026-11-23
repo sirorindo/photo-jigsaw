@@ -1,0 +1,1113 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>写真ジグソー</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&display=swap">
+<style>
+/* Layout: one full-height "table" canvas with a slim status bar above and a thumb-reach toolbar below.
+   A home panel (new puzzle + saved puzzles) slides over the table. The photo is the only saturated thing
+   on screen; the UI stays neutral with a single poké-ball red accent. */
+:root {
+  --bg: #e9ecf1;
+  --table: #dde2ea;
+  --board: #f6f7fa;
+  --surface: #ffffff;
+  --surface-2: #eef1f6;
+  --fg: #1c2230;
+  --muted: #566074;
+  --line: #c9d0dc;
+  --accent: #d9382b;
+  --accent-fg: #ffffff;
+  --shadow: rgba(24, 32, 50, .22);
+  --font: "Zen Maru Gothic", "Hiragino Maru Gothic ProN", "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1117;
+    --table: #171c25;
+    --board: #222937;
+    --surface: #1d2330;
+    --surface-2: #272f3f;
+    --fg: #eef1f6;
+    --muted: #9ca6ba;
+    --line: #374055;
+    --accent: #ff6b58;
+    --accent-fg: #1a0d0b;
+    --shadow: rgba(0, 0, 0, .55);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1117;
+  --table: #171c25;
+  --board: #222937;
+  --surface: #1d2330;
+  --surface-2: #272f3f;
+  --fg: #eef1f6;
+  --muted: #9ca6ba;
+  --line: #374055;
+  --accent: #ff6b58;
+  --accent-fg: #1a0d0b;
+  --shadow: rgba(0, 0, 0, .55);
+  color-scheme: dark;
+}
+
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+  font-weight: 500;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+input { -webkit-user-select: text; user-select: text; }
+
+.bar { background: var(--surface); flex: none; }
+.bar .inner {
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.top { border-bottom: 1px solid var(--line); }
+.bottom { border-top: 1px solid var(--line); }
+h1 { margin: 0; font-size: 16px; font-weight: 700; letter-spacing: .02em; white-space: nowrap; }
+.stats { margin-left: auto; display: flex; gap: 14px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stats b { color: var(--fg); font-weight: 700; }
+.meter { height: 3px; background: var(--surface-2); }
+.meter i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .25s ease; }
+
+.stage { position: relative; flex: 1; min-height: 360px; min-width: 0; background: var(--bg); overflow: hidden; }
+#cv { position: absolute; inset: 0; display: block; touch-action: none; cursor: grab; }
+#cv.dragging { cursor: grabbing; }
+
+.tools { gap: 8px; }
+button, .btn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--fg);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+.tools button { flex: 1 1 0; min-width: 0; font-size: 12px; padding: 0 2px; }
+.tools .icon { flex: 0 0 40px; font-size: 18px; padding: 0; }
+button:hover, .btn:hover { border-color: var(--muted); }
+button:disabled { opacity: .45; cursor: default; }
+button[aria-pressed="true"], button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+button.danger { color: var(--accent); }
+button:focus-visible, .btn:focus-visible, input:focus-visible, .sr:focus-visible + label { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+.thumb {
+  position: absolute; top: 12px; right: max(12px, env(safe-area-inset-right, 0px));
+  width: min(42%, 240px); max-width: 100%;
+  border: 3px solid var(--surface); border-radius: 10px;
+  box-shadow: 0 6px 18px var(--shadow);
+  pointer-events: none; z-index: 5;
+}
+.savepill {
+  position: absolute; top: 12px; left: max(12px, env(safe-area-inset-left, 0px)); z-index: 5;
+  font-size: 11px; color: var(--muted); background: var(--surface); border: 1px solid var(--line);
+  border-radius: 999px; padding: 3px 10px; pointer-events: none; font-variant-numeric: tabular-nums;
+}
+.toast {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 30;
+  max-width: calc(100% - 32px); width: max-content;
+  background: var(--fg); color: var(--bg);
+  padding: 10px 14px; border-radius: 10px; font-size: 13px; line-height: 1.5; text-align: center;
+  box-shadow: 0 6px 18px var(--shadow); pointer-events: none;
+}
+.done {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 10;
+  width: min(calc(100% - 32px), 380px);
+  background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: 0 10px 28px var(--shadow);
+  padding: 16px; display: flex; flex-direction: column; gap: 6px; align-items: center; text-align: center;
+}
+.done strong { font-size: 22px; }
+.done span { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+.done .row { display: flex; gap: 8px; margin-top: 8px; width: 100%; }
+.done .row button { flex: 1; }
+
+/* home panel */
+.home { position: absolute; inset: 0; z-index: 20; overflow-y: auto; background: var(--bg); padding-block: 16px 28px; }
+.wrap {
+  width: min(100%, 560px); margin: 0 auto; box-sizing: border-box;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 16px;
+}
+.home-head { display: flex; align-items: center; gap: 12px; }
+.home-head h2 { margin: 0; font-size: 18px; }
+.home-head button { margin-left: auto; min-height: 40px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.card h3 { margin: 0; font-size: 15px; }
+.hint { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.7; }
+.prev { width: 100%; max-height: 190px; object-fit: contain; background: var(--surface-2); border-radius: 10px; display: block; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.sr { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+label.cap { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+input[type="text"], input[type="number"] {
+  font: inherit; font-size: 16px; font-weight: 700; color: var(--fg);
+  min-height: 44px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2);
+  padding: 0 10px; box-sizing: border-box; min-width: 0;
+}
+input[type="text"] { width: 100%; font-weight: 500; }
+input[type="number"] { width: 64px; text-align: center; -moz-appearance: textfield; appearance: textfield; }
+input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.grid-in { display: flex; align-items: flex-end; justify-content: center; gap: 10px; flex-wrap: wrap; }
+.stepper { display: flex; gap: 4px; }
+.stepper button { min-height: 44px; width: 40px; padding: 0; font-size: 18px; }
+.times { font-size: 20px; color: var(--muted); padding-bottom: 8px; }
+.count { text-align: center; font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.count b { color: var(--fg); font-size: 20px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.chips button { min-height: 36px; padding: 0 12px; border-radius: 999px; font-weight: 500; }
+
+.item { display: flex; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); min-width: 0; }
+.item.now { border-color: var(--accent); }
+.item img { width: 76px; height: 56px; object-fit: cover; border-radius: 8px; flex: none; background: var(--line); }
+.item .meta { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.item .nm { font-weight: 700; font-size: 14px; overflow-wrap: anywhere; }
+.item .sub { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.item .btns { display: flex; flex-direction: column; gap: 6px; flex: none; }
+.item .btns button { min-height: 36px; padding: 0 10px; font-size: 12px; }
+
+@media (prefers-reduced-motion: reduce) { .meter i { transition: none; } }
+@media (max-width: 380px) { .stats { gap: 8px; font-size: 12px; } h1 { font-size: 15px; } .tools { gap: 6px; } .item img { width: 60px; height: 46px; } }
+</style>
+
+<header class="bar top">
+  <div class="inner">
+    <h1>写真ジグソー</h1>
+    <div class="stats">
+      <span>じかん <b id="time">00:00</b></span>
+      <span>はまった <b id="prog">0 / 0</b></span>
+    </div>
+  </div>
+  <div class="meter" aria-hidden="true"><i id="meter"></i></div>
+</header>
+
+<main class="stage" id="stage">
+  <canvas id="cv" aria-label="ジグソーパズルの盤面"></canvas>
+  <img id="thumb" class="thumb" src="photo.jpg" alt="完成見本" hidden>
+  <div id="savepill" class="savepill" hidden></div>
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <div id="done" class="done" hidden>
+    <strong>かんせい！</strong>
+    <span id="doneTime"></span>
+    <div class="row">
+      <button id="again" class="primary" type="button">あたらしいパズル</button>
+      <button id="closeDone" type="button">とじる</button>
+    </div>
+  </div>
+
+  <section id="home" class="home" hidden aria-label="ホーム">
+    <div class="wrap">
+      <div class="home-head">
+        <h2>写真をパズルにする</h2>
+        <button id="homeClose" type="button">もどる</button>
+      </div>
+
+      <div class="card">
+        <h3>あたらしいパズル</h3>
+        <img id="dPreview" class="prev" alt="えらんだ写真" src="photo.jpg">
+        <div class="row">
+          <input id="file" class="sr" type="file" accept="image/*">
+          <label class="btn" for="file">写真をえらぶ</label>
+          <button id="useSample" type="button">ポケモンの写真</button>
+        </div>
+        <div>
+          <label class="cap" for="pname">なまえ</label>
+          <input id="pname" type="text" maxlength="30" value="ポケモン" autocomplete="off">
+        </div>
+        <div class="grid-in">
+          <div>
+            <label class="cap" for="cols">よこ（列）</label>
+            <div class="stepper">
+              <button type="button" data-t="cols" data-d="-1" aria-label="列をへらす">−</button>
+              <input id="cols" type="number" inputmode="numeric" min="2" max="30" value="15">
+              <button type="button" data-t="cols" data-d="1" aria-label="列をふやす">＋</button>
+            </div>
+          </div>
+          <span class="times" aria-hidden="true">×</span>
+          <div>
+            <label class="cap" for="rows">たて（行）</label>
+            <div class="stepper">
+              <button type="button" data-t="rows" data-d="-1" aria-label="行をへらす">−</button>
+              <input id="rows" type="number" inputmode="numeric" min="2" max="30" value="15">
+              <button type="button" data-t="rows" data-d="1" aria-label="行をふやす">＋</button>
+            </div>
+          </div>
+        </div>
+        <div class="count"><b id="total">225</b> ピース</div>
+        <div class="chips">
+          <button type="button" data-c="5" data-r="5">5×5</button>
+          <button type="button" data-c="8" data-r="8">8×8</button>
+          <button type="button" data-c="10" data-r="10">10×10</button>
+          <button type="button" data-c="15" data-r="15">15×15</button>
+          <button type="button" id="square">ピースを正方形に近づける</button>
+        </div>
+        <button id="start" class="primary" type="button">パズルをつくる</button>
+        <p class="hint">2〜30の数字を入れられます。つくったパズルは、ドラッグするたびに自動でほぞんされます。</p>
+      </div>
+
+      <div class="card">
+        <h3>ほぞんしたパズル</h3>
+        <div id="saved" class="wrap-list" style="display:flex;flex-direction:column;gap:10px"></div>
+        <div class="row">
+          <input id="impFile" class="sr" type="file" accept=".json,application/json">
+          <label class="btn" for="impFile">ファイルからよみこむ</label>
+        </div>
+        <p class="hint" id="saveNote">ほぞんはこの端末のこのブラウザの中だけです。ブラウザのデータを消すと、ほぞんも消えます。ほかの端末で続きをあそぶには、「かきだし」でファイルにして、その端末の「ファイルからよみこむ」で開いてください。ファイルには写真もはいっています。</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="bar bottom">
+  <div class="inner tools">
+    <button id="btnPreview" type="button" aria-pressed="false">みほん</button>
+    <button id="btnAll" type="button">ぜんたい</button>
+    <button id="btnBoard" type="button">わく</button>
+    <button id="btnOut" class="icon" type="button" aria-label="ちいさく">−</button>
+    <button id="btnIn" class="icon" type="button" aria-label="おおきく">＋</button>
+    <button id="btnMenu" type="button">ホーム</button>
+  </div>
+</footer>
+
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const cv = $('cv'), ctx = cv.getContext('2d');
+  const stage = $('stage');
+  const hctx = document.createElement('canvas').getContext('2d');
+  const K = 1.5;          // bitmap sharpness of each piece
+  const LONG = 1200;      // long side of the board in world units
+  const MAXN = 30, MINN = 2;
+  const DIRS = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+
+  let defaultImg = null, storageOK = false, cur = null, curUrl = null;
+  let COLS = 15, ROWS = 15, W = 0, H = 0, cw = 0, ch = 0, S = 0, pad = 0, bw = 0, bh = 0, seed = 1;
+  let work = null, grid = [], zlist = [];
+  let world = { x: 0, y: 0, w: 0, h: 0 };
+  let view = { s: 1, ox: 0, oy: 0 }, vw = 0, vh = 0, dpr = 1;
+  let elapsed = 0, running = false, done = false, previewOn = false;
+  let theme = {};
+  let draft = { im: null, blob: null, isDefault: true, name: 'ポケモン' };
+
+  /* ---------- helpers ---------- */
+  function rng(a) {
+    return function () {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  const rand32 = () => (Math.random() * 4294967296) >>> 0;
+  const clampN = v => Math.max(MINN, Math.min(MAXN, Math.round(Number(v)) || MINN));
+  const fmt = s => { s = Math.max(0, Math.floor(s)); const m = Math.floor(s / 60), r = s % 60; return String(m).padStart(2, '0') + ':' + String(r).padStart(2, '0'); };
+  const total = () => COLS * ROWS;
+  let toastT;
+  function toast(msg, ms) {
+    const t = $('toast'); t.textContent = msg; t.hidden = false;
+    clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, ms || 3500);
+  }
+  const tick = ms => new Promise(r => setTimeout(r, ms));
+  function loadImage(src) {
+    return new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = src; });
+  }
+  function readTheme() {
+    const cs = getComputedStyle(document.documentElement);
+    const g = n => cs.getPropertyValue(n).trim();
+    theme = { table: g('--table'), board: g('--board'), line: g('--line') };
+  }
+
+  /* ---------- storage (IndexedDB, this browser only) ---------- */
+  const DB = {
+    db: null,
+    open() {
+      return new Promise(res => {
+        try {
+          const rq = indexedDB.open('photo-jigsaw', 1);
+          rq.onupgradeneeded = () => { const d = rq.result; d.createObjectStore('puzzles', { keyPath: 'id' }); d.createObjectStore('images', { keyPath: 'id' }); };
+          rq.onsuccess = () => { DB.db = rq.result; res(true); };
+          rq.onerror = () => res(false);
+          rq.onblocked = () => res(false);
+        } catch (e) { res(false); }
+      });
+    },
+    tx(store, mode, fn) {
+      return new Promise((res, rej) => {
+        if (!DB.db) { rej(new Error('nodb')); return; }
+        let rq;
+        try {
+          const t = DB.db.transaction(store, mode);
+          rq = fn(t.objectStore(store));
+          t.oncomplete = () => res(rq ? rq.result : undefined);
+          t.onerror = () => rej(t.error);
+          t.onabort = () => rej(t.error || new Error('abort'));
+        } catch (e) { rej(e); }
+      });
+    },
+    put(store, v) { return DB.tx(store, 'readwrite', os => os.put(v)); },
+    get(store, id) { return DB.tx(store, 'readonly', os => os.get(id)); },
+    all(store) { return DB.tx(store, 'readonly', os => os.getAll()); },
+    del(store, id) { return DB.tx(store, 'readwrite', os => os.delete(id)); }
+  };
+
+  let pillT;
+  function setSaveState(ok, t) {
+    const p = $('savepill');
+    if (!cur) { p.hidden = true; return; }
+    p.hidden = false;
+    if (ok) {
+      const d = new Date(t || Date.now());
+      p.textContent = 'ほぞん済み ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    } else p.textContent = 'ほぞんできません';
+    clearTimeout(pillT);
+  }
+
+  let saveT;
+  function save() { clearTimeout(saveT); saveT = setTimeout(saveNow, 300); }
+  async function saveNow() {
+    clearTimeout(saveT);
+    if (!cur || !storageOK || cur.noSave) return;
+    const rec = {
+      id: cur.id, name: cur.name, cols: COLS, rows: ROWS, seed, imgId: cur.imgId, thumb: cur.thumb,
+      created: cur.created, elapsed: Math.round(elapsed), done, placed: placedCount(), updated: Date.now(),
+      z: zlist.map(g => ({ x: +g.gx.toFixed(1), y: +g.gy.toFixed(1), p: g.placed ? 1 : 0, c: g.pcs.map(p => p.r * COLS + p.c) }))
+    };
+    try { await DB.put('puzzles', rec); setSaveState(true, rec.updated); }
+    catch (e) { setSaveState(false); }
+  }
+
+  async function migrateV1() {
+    try {
+      const n = parseInt(localStorage.getItem('pj1-last'), 10);
+      if (!n) return;
+      const s = JSON.parse(localStorage.getItem('pj1-' + n));
+      if (s && s.N === n && Array.isArray(s.z)) {
+        let placed = 0;
+        for (const g of s.z) if (g.p) placed += g.c.length;
+        await DB.put('puzzles', {
+          id: 'v1-' + n, name: 'ポケモン', cols: n, rows: n, seed: s.seed, imgId: 'default', thumb: '',
+          created: Date.now(), elapsed: s.elapsed || 0, done: !!s.done, placed, updated: Date.now(), z: s.z
+        });
+      }
+      localStorage.removeItem('pj1-' + n);
+      localStorage.removeItem('pj1-last');
+    } catch (e) { /* nothing to migrate */ }
+  }
+
+  /* ---------- jigsaw geometry ---------- */
+  function edgePath(p, x0, y0, x1, y1, dir) {
+    if (!dir) { p.lineTo(x1, y1); return; }
+    const dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy);
+    const ux = dx / L, uy = dy / L, nx = uy, ny = -ux, t = 0.1;
+    const P = (x, w, abs) => {
+      const l = abs ? L / 2 + (x - 0.5) * S : x * L;
+      return [x0 + ux * l + nx * w * S * dir, y0 + uy * l + ny * w * S * dir];
+    };
+    const p1 = P(0.2, 0, false), p2 = P(0.5, -t, true), p3 = P(0.5 - t, t, true);
+    const p4 = P(0.5 - 2 * t, 3 * t, true), p5 = P(0.5 + 2 * t, 3 * t, true), p6 = P(0.5 + t, t, true);
+    const p7 = P(0.5, -t, true), p8 = P(0.8, 0, false);
+    p.bezierCurveTo(p1[0], p1[1], p2[0], p2[1], p3[0], p3[1]);
+    p.bezierCurveTo(p4[0], p4[1], p5[0], p5[1], p6[0], p6[1]);
+    p.bezierCurveTo(p7[0], p7[1], p8[0], p8[1], x1, y1);
+  }
+  function piecePath(top, right, bottom, left) {
+    const p = new Path2D();
+    const x0 = pad, y0 = pad, x1 = pad + cw, y1 = pad + ch;
+    p.moveTo(x0, y0);
+    edgePath(p, x0, y0, x1, y0, top);
+    edgePath(p, x1, y0, x1, y1, right);
+    edgePath(p, x1, y1, x0, y1, bottom);
+    edgePath(p, x0, y1, x0, y0, left);
+    p.closePath();
+    return p;
+  }
+  function renderPiece(r, c, path) {
+    const b = document.createElement('canvas');
+    b.width = Math.ceil(bw * K); b.height = Math.ceil(bh * K);
+    const g = b.getContext('2d');
+    g.scale(K, K);
+    g.save(); g.clip(path);
+    let sx = c * cw - pad, sy = r * ch - pad, dx = 0, dy = 0, sw = bw, sh = bh;
+    if (sx < 0) { dx = -sx; sw += sx; sx = 0; }
+    if (sy < 0) { dy = -sy; sh += sy; sy = 0; }
+    if (sx + sw > W) sw = W - sx;
+    if (sy + sh > H) sh = H - sy;
+    if (sw > 0 && sh > 0) g.drawImage(work, sx * K, sy * K, sw * K, sh * K, dx, dy, sw, sh);
+    g.restore();
+    g.save(); g.clip(path); g.translate(0.8, 0.8);
+    g.lineWidth = 2; g.strokeStyle = 'rgba(255,255,255,.35)'; g.stroke(path);
+    g.restore();
+    g.lineWidth = 1; g.strokeStyle = 'rgba(0,0,0,.45)'; g.stroke(path);
+    return b;
+  }
+
+  /* ---------- game state ---------- */
+  function setImage(im) {
+    const fit = LONG / Math.max(im.naturalWidth, im.naturalHeight);
+    W = Math.round(im.naturalWidth * fit); H = Math.round(im.naturalHeight * fit);
+    work = document.createElement('canvas');
+    work.width = Math.round(W * K); work.height = Math.round(H * K);
+    const g = work.getContext('2d');
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(im, 0, 0, work.width, work.height);
+    $('thumb').src = im.src;
+    $('thumb').style.aspectRatio = W + ' / ' + H;
+  }
+
+  function build(cols, rows, sd, state) {
+    COLS = cols; ROWS = rows; seed = sd;
+    cw = W / COLS; ch = H / ROWS; S = Math.min(cw, ch); pad = Math.ceil(S * 0.4);
+    bw = Math.ceil(cw + 2 * pad); bh = Math.ceil(ch + 2 * pad);
+    const rand = rng(seed), hz = [], vt = [];
+    for (let r = 0; r < ROWS; r++) {
+      hz.push([]); vt.push([]);
+      for (let c = 0; c < COLS; c++) { hz[r].push(rand() < 0.5 ? 1 : -1); vt[r].push(rand() < 0.5 ? 1 : -1); }
+    }
+    grid = [];
+    const flat = [];
+    for (let r = 0; r < ROWS; r++) {
+      grid.push([]);
+      for (let c = 0; c < COLS; c++) {
+        const top = r === 0 ? 0 : -hz[r - 1][c];
+        const right = c === COLS - 1 ? 0 : vt[r][c];
+        const bottom = r === ROWS - 1 ? 0 : hz[r][c];
+        const left = c === 0 ? 0 : -vt[r][c - 1];
+        const path = piecePath(top, right, bottom, left);
+        const p = { r, c, path, bmp: renderPiece(r, c, path), g: null };
+        grid[r].push(p); flat.push(p);
+      }
+    }
+    const mx = W * 0.4, my = H * 0.4;
+    world = { x: -mx, y: -my, w: W + 2 * mx, h: H + 2 * my };
+
+    zlist = [];
+    let restored = false;
+    if (state && Array.isArray(state.z)) {
+      const seen = new Set(); let ok = true;
+      for (const sg of state.z) {
+        if (!sg || !Array.isArray(sg.c)) { ok = false; break; }
+        for (const i of sg.c) { if (!(i >= 0 && i < flat.length) || seen.has(i)) { ok = false; break; } seen.add(i); }
+        if (!ok) break;
+      }
+      if (ok && seen.size === flat.length) {
+        for (const sg of state.z) {
+          const g = { gx: +sg.x || 0, gy: +sg.y || 0, placed: !!sg.p, pcs: [] };
+          for (const i of sg.c) { const p = flat[i]; p.g = g; g.pcs.push(p); }
+          if (g.placed) { g.gx = 0; g.gy = 0; }
+          zlist.push(g);
+        }
+        restored = true;
+        elapsed = +state.elapsed || 0;
+        done = !!state.done;
+      }
+    }
+    if (!restored) {
+      const R2 = rng(seed ^ 0x9e3779b9);
+      for (const p of flat) {
+        const g = { gx: 0, gy: 0, placed: false, pcs: [p] };
+        p.g = g;
+        let cx = 0, cy = 0;
+        for (let k = 0; k < 60; k++) {
+          cx = world.x + cw / 2 + R2() * (world.w - cw);
+          cy = world.y + ch / 2 + R2() * (world.h - ch);
+          if (cx < -cw * 0.3 || cx > W + cw * 0.3 || cy < -ch * 0.3 || cy > H + ch * 0.3) break;
+        }
+        g.gx = cx - cw / 2 - p.c * cw; g.gy = cy - ch / 2 - p.r * ch;
+        zlist.push(g);
+      }
+      for (let i = zlist.length - 1; i > 0; i--) { const j = Math.floor(R2() * (i + 1)); [zlist[i], zlist[j]] = [zlist[j], zlist[i]]; }
+      elapsed = 0; done = false;
+    }
+    running = false;
+    $('done').hidden = !done;
+    if (done) $('doneTime').textContent = 'タイム ' + fmt(elapsed);
+    updateStats();
+    if (vw) fitAll();
+    draw();
+  }
+
+  function placedCount() { let n = 0; for (const g of zlist) if (g.placed) n += g.pcs.length; return n; }
+  function updateStats() {
+    const n = placedCount(), t = total();
+    $('prog').textContent = n + ' / ' + t;
+    $('meter').style.width = (t ? n / t * 100 : 0) + '%';
+    $('time').textContent = fmt(elapsed);
+  }
+
+  /* ---------- puzzles: open / create ---------- */
+  async function openPuzzle(rec, im) {
+    toast('じゅんびしています…', 8000);
+    await tick(30);
+    try {
+      if (!im) {
+        if (rec.imgId === 'default') im = defaultImg;
+        else {
+          const row = await DB.get('images', rec.imgId);
+          const blob = row && (row.blob || (row.buf ? new Blob([row.buf], { type: row.type || 'image/jpeg' }) : null));
+          if (!blob) throw new Error('noimg');
+          if (curUrl) URL.revokeObjectURL(curUrl);
+          curUrl = URL.createObjectURL(blob);
+          im = await loadImage(curUrl);
+        }
+      }
+      setImage(im);
+      cur = { id: rec.id, name: rec.name, imgId: rec.imgId, thumb: rec.thumb || '', created: rec.created || rec.updated || Date.now(), noSave: !!rec.noSave };
+      build(rec.cols, rec.rows, rec.seed, rec);
+      closeHome();
+      if (cur.noSave) setSaveState(false); else setSaveState(true, rec.updated);
+      $('toast').hidden = true;
+      return true;
+    } catch (e) {
+      if (!zlist.length) cur = null;
+      toast('このパズルをひらけませんでした。ホームから別のパズルをひらくか、けしてつくりなおしてください。', 6000);
+      return false;
+    }
+  }
+
+  function makeThumb(im) {
+    const c = document.createElement('canvas');
+    const f = 200 / Math.max(im.naturalWidth, im.naturalHeight);
+    c.width = Math.max(1, Math.round(im.naturalWidth * f)); c.height = Math.max(1, Math.round(im.naturalHeight * f));
+    c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+    try { return c.toDataURL('image/jpeg', 0.72); } catch (e) { return ''; }
+  }
+
+  async function createPuzzle(cols, rows, name) {
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    let imgId = 'default', thumb = '', noSave = !storageOK;
+    if (!draft.isDefault) { imgId = id; thumb = makeThumb(draft.im); }
+    const rec = { id, name, cols, rows, seed: rand32(), imgId, thumb, created: Date.now(), elapsed: 0, done: false, placed: 0, updated: Date.now(), z: null, noSave };
+    if (storageOK) {
+      try {
+        if (!draft.isDefault) await DB.put('images', { id, buf: await draft.blob.arrayBuffer(), type: draft.blob.type || 'image/jpeg' });
+        await DB.put('puzzles', Object.assign({}, rec, { noSave: undefined }));
+      } catch (e) {
+        rec.noSave = true;
+        toast('ほぞんできませんでした。このままあそべますが、あとからつづきはできません。', 6000);
+      }
+    }
+    await openPuzzle(rec, draft.im);
+    if (!rec.noSave) toast('ばらばらにしました。ピースをドラッグして合わせましょう。', 3500);
+  }
+
+  /* ---------- snapping ---------- */
+  function merge(a, b) {
+    let t, s;
+    if (a.placed) { t = a; s = b; } else if (b.placed) { t = b; s = a; }
+    else if (a.pcs.length >= b.pcs.length) { t = a; s = b; } else { t = b; s = a; }
+    for (const p of s.pcs) { p.g = t; t.pcs.push(p); }
+    zlist.splice(zlist.indexOf(s), 1);
+    if (!t.placed) { zlist.splice(zlist.indexOf(t), 1); zlist.push(t); }
+    return t;
+  }
+  function click() { try { if (navigator.vibrate) navigator.vibrate(10); } catch (e) { /* ignore */ } }
+  function settle(g) {
+    const T = Math.min(cw, ch) * 0.3;
+    let again = true, snapped = false;
+    while (again) {
+      again = false;
+      if (!g.placed && Math.abs(g.gx) < T && Math.abs(g.gy) < T) { g.gx = 0; g.gy = 0; g.placed = true; again = true; snapped = true; }
+      outer: for (const p of g.pcs) {
+        for (const d of DIRS) {
+          const rr = p.r + d[0], cc = p.c + d[1];
+          if (rr < 0 || cc < 0 || rr >= ROWS || cc >= COLS) continue;
+          const h = grid[rr][cc].g;
+          if (h === g) continue;
+          if (Math.abs(h.gx - g.gx) < T && Math.abs(h.gy - g.gy) < T) { g = merge(g, h); again = true; snapped = true; break outer; }
+        }
+      }
+    }
+    if (snapped) click();
+    updateStats();
+    if (!done && placedCount() === total()) finish();
+  }
+  function finish() {
+    done = true; running = false;
+    $('doneTime').textContent = 'タイム ' + fmt(elapsed);
+    $('done').hidden = false;
+    saveNow(); draw();
+  }
+
+  /* ---------- view ---------- */
+  const toWorld = (x, y) => ({ x: (x - view.ox) / view.s, y: (y - view.oy) / view.s });
+  function minScale() { return Math.min(vw / (world.w + 20), vh / (world.h + 20)) * 0.8; }
+  function zoomAt(x, y, ns) {
+    ns = Math.max(minScale(), Math.min(3.5, ns));
+    const w = toWorld(x, y);
+    view.s = ns; view.ox = x - w.x * ns; view.oy = y - w.y * ns;
+    draw();
+  }
+  function fitRect(x, y, w, h, m) {
+    if (!vw || !vh || !w) return;
+    const s = Math.min(vw / (w + 2 * m), vh / (h + 2 * m));
+    view.s = s; view.ox = vw / 2 - (x + w / 2) * s; view.oy = vh / 2 - (y + h / 2) * s;
+    draw();
+  }
+  const fitAll = () => fitRect(world.x, world.y, world.w, world.h, 10);
+  const fitBoard = () => fitRect(0, 0, W, H, Math.min(cw, ch) * 0.5);
+
+  function resize() {
+    const r = stage.getBoundingClientRect();
+    const nw = Math.max(1, Math.round(r.width)), nh = Math.max(1, Math.round(r.height));
+    dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    const first = vw === 0;
+    const cx = first ? 0 : (vw / 2 - view.ox) / view.s, cy = first ? 0 : (vh / 2 - view.oy) / view.s;
+    vw = nw; vh = nh;
+    cv.width = Math.round(nw * dpr); cv.height = Math.round(nh * dpr);
+    cv.style.width = nw + 'px'; cv.style.height = nh + 'px';
+    if (first) { if (world.w) fitAll(); }
+    else { view.ox = vw / 2 - cx * view.s; view.oy = vh / 2 - cy * view.s; }
+    draw();
+  }
+
+  /* ---------- rendering ---------- */
+  let queued = false;
+  function draw() {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => { queued = false; render(); });
+  }
+  function drawGroup(g, vx0, vy0, vx1, vy1) {
+    for (const p of g.pcs) {
+      const px = g.gx + p.c * cw - pad, py = g.gy + p.r * ch - pad;
+      if (px > vx1 || py > vy1 || px + bw < vx0 || py + bh < vy0) continue;
+      ctx.drawImage(p.bmp, px, py, p.bmp.width / K, p.bmp.height / K);
+    }
+  }
+  function render() {
+    if (!vw || !work) return;
+    const s = view.s;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.setTransform(dpr * s, 0, 0, dpr * s, dpr * view.ox, dpr * view.oy);
+    const vx0 = -view.ox / s, vy0 = -view.oy / s, vx1 = (vw - view.ox) / s, vy1 = (vh - view.oy) / s;
+
+    ctx.fillStyle = theme.table;
+    ctx.fillRect(world.x, world.y, world.w, world.h);
+    ctx.lineWidth = 2 / s; ctx.strokeStyle = theme.line;
+    ctx.strokeRect(world.x, world.y, world.w, world.h);
+
+    ctx.fillStyle = theme.board;
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = previewOn ? 0.34 : 0.1;
+    ctx.drawImage(work, 0, 0, W, H);
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 2 / s; ctx.strokeStyle = theme.line;
+    ctx.strokeRect(0, 0, W, H);
+
+    if (done) { ctx.drawImage(work, 0, 0, W, H); return; }
+    for (const g of zlist) if (g.placed) drawGroup(g, vx0, vy0, vx1, vy1);
+    for (const g of zlist) {
+      if (g.placed) continue;
+      if (drag && drag.g === g && g.pcs.length <= 40) {
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,.4)'; ctx.shadowBlur = 12 * dpr; ctx.shadowOffsetY = 4 * dpr;
+        drawGroup(g, vx0, vy0, vx1, vy1);
+        ctx.restore();
+      } else drawGroup(g, vx0, vy0, vx1, vy1);
+    }
+  }
+
+  /* ---------- input ---------- */
+  const pts = new Map();
+  let mode = null, drag = null, panStart = null, pinch = null;
+
+  function hitTest(wx, wy) {
+    const slop = 10 / view.s;
+    for (let i = zlist.length - 1; i >= 0; i--) {
+      const g = zlist[i]; if (g.placed) continue;
+      for (const p of g.pcs) {
+        const lx = wx - (g.gx + p.c * cw) + pad, ly = wy - (g.gy + p.r * ch) + pad;
+        if (lx < 0 || ly < 0 || lx > bw || ly > bh) continue;
+        if (hctx.isPointInPath(p.path, lx, ly)) return g;
+      }
+    }
+    for (let i = zlist.length - 1; i >= 0; i--) {
+      const g = zlist[i]; if (g.placed) continue;
+      for (const p of g.pcs) {
+        const px = g.gx + p.c * cw, py = g.gy + p.r * ch;
+        if (wx >= px - slop && wx <= px + cw + slop && wy >= py - slop && wy <= py + ch + slop) return g;
+      }
+    }
+    return null;
+  }
+  function startDrag(g, w) {
+    zlist.splice(zlist.indexOf(g), 1); zlist.push(g);
+    drag = { g, dx: w.x - g.gx, dy: w.y - g.gy };
+    mode = 'drag'; cv.classList.add('dragging'); draw();
+  }
+  function endDrag() {
+    if (mode !== 'drag' || !drag) return;
+    const g = drag.g;
+    drag = null; mode = null; cv.classList.remove('dragging');
+    settle(g); save(); draw();
+  }
+  function startPinch() {
+    const a = [...pts.values()];
+    const d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y) || 1;
+    const c = { x: (a[0].x + a[1].x) / 2, y: (a[0].y + a[1].y) / 2 };
+    pinch = { d, s: view.s, w: toWorld(c.x, c.y) };
+    mode = 'pinch';
+  }
+  const local = e => { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+
+  cv.addEventListener('pointerdown', e => {
+    try { cv.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    const l = local(e);
+    pts.set(e.pointerId, l);
+    if (pts.size === 2) { endDrag(); startPinch(); return; }
+    if (pts.size > 2) return;
+    const w = toWorld(l.x, l.y);
+    const g = done ? null : hitTest(w.x, w.y);
+    if (g) { startDrag(g, w); if (!running) running = true; }
+    else { mode = 'pan'; panStart = { x: l.x, y: l.y, ox: view.ox, oy: view.oy }; cv.classList.add('dragging'); }
+  });
+  cv.addEventListener('pointermove', e => {
+    if (!pts.has(e.pointerId)) return;
+    const l = local(e);
+    pts.set(e.pointerId, l);
+    if (mode === 'pinch' && pts.size >= 2) {
+      const a = [...pts.values()];
+      const d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y) || 1;
+      const c = { x: (a[0].x + a[1].x) / 2, y: (a[0].y + a[1].y) / 2 };
+      const ns = Math.max(minScale(), Math.min(3.5, pinch.s * d / pinch.d));
+      view.s = ns; view.ox = c.x - pinch.w.x * ns; view.oy = c.y - pinch.w.y * ns;
+      draw();
+    } else if (mode === 'drag' && drag) {
+      const w = toWorld(l.x, l.y);
+      const wx = Math.max(world.x, Math.min(world.x + world.w, w.x));
+      const wy = Math.max(world.y, Math.min(world.y + world.h, w.y));
+      drag.g.gx = wx - drag.dx; drag.g.gy = wy - drag.dy;
+      draw();
+    } else if (mode === 'pan' && panStart) {
+      view.ox = panStart.ox + (l.x - panStart.x); view.oy = panStart.oy + (l.y - panStart.y);
+      draw();
+    }
+  });
+  function pointerEnd(e) {
+    if (!pts.has(e.pointerId)) return;
+    pts.delete(e.pointerId);
+    if (mode === 'drag') endDrag();
+    else if (mode === 'pinch') {
+      pinch = null;
+      if (pts.size === 1) { const l = [...pts.values()][0]; mode = 'pan'; panStart = { x: l.x, y: l.y, ox: view.ox, oy: view.oy }; }
+      else mode = null;
+    } else if (pts.size === 0) { mode = null; panStart = null; cv.classList.remove('dragging'); }
+  }
+  cv.addEventListener('pointerup', pointerEnd);
+  cv.addEventListener('pointercancel', pointerEnd);
+  cv.addEventListener('wheel', e => {
+    e.preventDefault();
+    const l = local(e);
+    zoomAt(l.x, l.y, view.s * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)));
+  }, { passive: false });
+  cv.addEventListener('contextmenu', e => e.preventDefault());
+
+  /* ---------- home panel ---------- */
+  function openHome() {
+    $('done').hidden = true;
+    $('homeClose').hidden = !cur;
+    $('home').hidden = false;
+    $('home').scrollTop = 0;
+    updateGridInfo();
+    renderList();
+  }
+  function closeHome() { $('home').hidden = true; $('done').hidden = !done || !cur; }
+
+  function updateGridInfo() {
+    const c = clampN($('cols').value), r = clampN($('rows').value);
+    $('total').textContent = c * r;
+    $('start').disabled = !draft.im;
+  }
+  function setDraft(d) {
+    draft = d;
+    $('dPreview').src = d.isDefault ? 'photo.jpg' : d.im.src;
+    $('pname').value = d.name;
+    updateGridInfo();
+  }
+  async function prepPhoto(file) {
+    const url = URL.createObjectURL(file);
+    const im = await loadImage(url);
+    const f = Math.min(1, 2000 / Math.max(im.naturalWidth, im.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(im.naturalWidth * f)); c.height = Math.max(1, Math.round(im.naturalHeight * f));
+    c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+    URL.revokeObjectURL(url);
+    const blob = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.9));
+    if (!blob) throw new Error('encode');
+    const im2 = await loadImage(URL.createObjectURL(blob));
+    return { im: im2, blob };
+  }
+
+  /* ---------- export / import (works without Claude) ---------- */
+  function b64(buf) {
+    let s = ''; const u = new Uint8Array(buf);
+    for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
+    return btoa(s);
+  }
+  function unb64(str) {
+    const s = atob(str); const u = new Uint8Array(s.length);
+    for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i);
+    return u.buffer;
+  }
+  async function buildExport(rec) {
+    let img = null;
+    if (rec.imgId !== 'default') {
+      const row = await DB.get('images', rec.imgId);
+      const blob = row && (row.blob || (row.buf ? new Blob([row.buf], { type: row.type || 'image/jpeg' }) : null));
+      if (!blob) throw new Error('noimg');
+      img = { type: blob.type || 'image/jpeg', data: b64(await blob.arrayBuffer()) };
+    }
+    const data = JSON.stringify({
+      app: 'photo-jigsaw', v: 1, name: rec.name, cols: rec.cols, rows: rec.rows, seed: rec.seed,
+      elapsed: rec.elapsed, done: !!rec.done, created: rec.created, thumb: rec.thumb || '', z: rec.z, img
+    });
+    const filename = (String(rec.name).replace(/[\\/:*?"<>|]/g, '_').trim() || 'puzzle') + '.json';
+    return { filename, data };
+  }
+  async function exportPuzzle(rec) {
+    const { filename, data } = await buildExport(rec);
+    let d = null;
+    try { d = window.claude && window.claude.use ? await window.claude.use('downloads') : null; } catch (e) { d = null; }
+    if (d) { await d.save({ filename, data }); return; }
+    const url = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+  async function importFromText(text) {
+    const j = JSON.parse(text);
+    if (!j || j.app !== 'photo-jigsaw' || !Array.isArray(j.z)) throw new Error('bad');
+    const cols = clampN(j.cols), rows = clampN(j.rows);
+    const seen = new Set();
+    for (const g of j.z) {
+      if (!g || !Array.isArray(g.c)) throw new Error('bad');
+      for (const i of g.c) { if (!(i >= 0 && i < cols * rows) || seen.has(i)) throw new Error('bad'); seen.add(i); }
+    }
+    if (seen.size !== cols * rows) throw new Error('bad');
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    let imgId = 'default', im = defaultImg, buf = null, type = 'image/jpeg';
+    if (j.img && j.img.data) {
+      buf = unb64(j.img.data); type = j.img.type || 'image/jpeg'; imgId = id;
+      const url = URL.createObjectURL(new Blob([buf], { type }));
+      im = await loadImage(url);
+    }
+    if (!im) throw new Error('noimg');
+    let placed = 0;
+    for (const g of j.z) if (g.p) placed += g.c.length;
+    const rec = {
+      id, name: String(j.name || 'パズル').slice(0, 30), cols, rows, seed: j.seed >>> 0, imgId, thumb: j.thumb || '',
+      created: j.created || Date.now(), elapsed: +j.elapsed || 0, done: !!j.done, placed, updated: Date.now(), z: j.z, noSave: !storageOK
+    };
+    if (storageOK) {
+      try {
+        if (buf) await DB.put('images', { id, buf, type });
+        await DB.put('puzzles', Object.assign({}, rec, { noSave: undefined }));
+      } catch (e) { rec.noSave = true; }
+    }
+    return { rec, im };
+  }
+
+  async function renderList() {
+    const box = $('saved');
+    box.textContent = '';
+    const note = $('saveNote');
+    if (!storageOK) {
+      const p = document.createElement('p'); p.className = 'hint';
+      p.textContent = 'このブラウザではほぞんできません。あそぶことはできます。';
+      box.appendChild(p); note.hidden = true; return;
+    }
+    note.hidden = false;
+    let rows = [];
+    try { rows = await DB.all('puzzles'); } catch (e) { rows = []; }
+    rows.sort((a, b) => b.updated - a.updated);
+    if (!rows.length) {
+      const p = document.createElement('p'); p.className = 'hint';
+      p.textContent = 'まだありません。パズルをつくると、ここにならびます。';
+      box.appendChild(p); return;
+    }
+    for (const r of rows) {
+      const it = document.createElement('div'); it.className = 'item';
+      const isNow = cur && cur.id === r.id;
+      if (isNow) it.classList.add('now');
+      const img = document.createElement('img'); img.alt = ''; img.src = r.thumb || 'photo.jpg';
+      const meta = document.createElement('div'); meta.className = 'meta';
+      const nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = r.name + (isNow ? '（あそんでいる）' : '');
+      const sub = document.createElement('div'); sub.className = 'sub';
+      const d = new Date(r.updated);
+      const when = (d.getMonth() + 1) + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+      sub.textContent = r.cols + '×' + r.rows + '・' + (r.done ? 'かんせい' : r.placed + '/' + r.cols * r.rows) + '・' + fmt(r.elapsed) + '・' + when;
+      meta.append(nm, sub);
+      const btns = document.createElement('div'); btns.className = 'btns';
+      const open = document.createElement('button'); open.type = 'button'; open.className = 'primary'; open.textContent = 'ひらく';
+      open.addEventListener('click', async () => {
+        open.disabled = true;
+        if (cur && !isNow) await saveNow();
+        if (isNow) closeHome(); else await openPuzzle(r);
+      });
+      const del = document.createElement('button'); del.type = 'button'; del.textContent = 'けす';
+      let armT;
+      del.addEventListener('click', async () => {
+        if (!del.dataset.arm) {
+          del.dataset.arm = '1'; del.textContent = 'ほんとうに？'; del.classList.add('danger');
+          armT = setTimeout(() => { delete del.dataset.arm; del.textContent = 'けす'; del.classList.remove('danger'); }, 3000);
+          return;
+        }
+        clearTimeout(armT);
+        try { await DB.del('puzzles', r.id); if (r.imgId && r.imgId !== 'default') await DB.del('images', r.imgId); } catch (e) { /* ignore */ }
+        if (isNow) {
+          cur = null; zlist = []; grid = []; done = false; running = false; elapsed = 0;
+          $('savepill').hidden = true; $('homeClose').hidden = true;
+          updateStats(); draw();
+        }
+        renderList();
+      });
+      const exp = document.createElement('button'); exp.type = 'button'; exp.textContent = 'かきだし';
+      exp.addEventListener('click', async () => {
+        exp.disabled = true;
+        try {
+          if (isNow) await saveNow();
+          const fresh = (await DB.get('puzzles', r.id)) || r;
+          await exportPuzzle(fresh);
+        } catch (e) {
+          if (!(e && e.code === 'declined')) toast('ファイルにかきだせませんでした。', 4000);
+        }
+        exp.disabled = false;
+      });
+      btns.append(open, exp, del);
+      it.append(img, meta, btns);
+      box.appendChild(it);
+    }
+  }
+
+  document.querySelectorAll('.stepper button').forEach(b => b.addEventListener('click', () => {
+    const inp = $(b.dataset.t);
+    inp.value = clampN((parseInt(inp.value, 10) || MINN) + parseInt(b.dataset.d, 10));
+    updateGridInfo();
+  }));
+  ['cols', 'rows'].forEach(id => {
+    $(id).addEventListener('input', updateGridInfo);
+    $(id).addEventListener('change', () => { $(id).value = clampN($(id).value); updateGridInfo(); });
+  });
+  document.querySelectorAll('.chips button[data-c]').forEach(b => b.addEventListener('click', () => {
+    $('cols').value = b.dataset.c; $('rows').value = b.dataset.r; updateGridInfo();
+  }));
+  $('square').addEventListener('click', () => {
+    if (!draft.im) return;
+    const c = clampN($('cols').value);
+    const asp = draft.im.naturalWidth / draft.im.naturalHeight;
+    $('rows').value = clampN(c / asp);
+    updateGridInfo();
+  });
+  $('file').addEventListener('change', async e => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    try {
+      const p = await prepPhoto(f);
+      setDraft({ im: p.im, blob: p.blob, isDefault: false, name: f.name.replace(/\.[^.]+$/, '').slice(0, 30) || '写真' });
+    } catch (err) { toast('その写真は読み込めませんでした。ほかの写真をためしてください。', 5000); }
+    e.target.value = '';
+  });
+  $('useSample').addEventListener('click', () => { if (defaultImg) setDraft({ im: defaultImg, blob: null, isDefault: true, name: 'ポケモン' }); });
+  $('start').addEventListener('click', async () => {
+    if (!draft.im) return;
+    const c = clampN($('cols').value), r = clampN($('rows').value);
+    const name = $('pname').value.trim().slice(0, 30) || draft.name || 'パズル';
+    $('start').disabled = true;
+    try { await saveNow(); await createPuzzle(c, r, name); }
+    finally { $('start').disabled = false; }
+  });
+  $('homeClose').addEventListener('click', closeHome);
+  $('impFile').addEventListener('change', async e => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    try {
+      await saveNow();
+      const { rec, im } = await importFromText(await f.text());
+      await openPuzzle(rec, im);
+    } catch (err) { toast('このファイルはよみこめませんでした。このページでかきだしたファイルをえらんでください。', 5000); }
+  });
+
+  /* ---------- toolbar ---------- */
+  $('btnAll').addEventListener('click', fitAll);
+  $('btnBoard').addEventListener('click', fitBoard);
+  $('btnIn').addEventListener('click', () => zoomAt(vw / 2, vh / 2, view.s * 1.4));
+  $('btnOut').addEventListener('click', () => zoomAt(vw / 2, vh / 2, view.s / 1.4));
+  $('btnPreview').addEventListener('click', () => {
+    previewOn = !previewOn;
+    $('btnPreview').setAttribute('aria-pressed', String(previewOn));
+    $('thumb').hidden = !previewOn;
+    draw();
+  });
+  $('btnMenu').addEventListener('click', () => { if ($('home').hidden) openHome(); else if (cur) closeHome(); });
+  $('closeDone').addEventListener('click', () => { $('done').hidden = true; });
+  $('again').addEventListener('click', openHome);
+
+  /* ---------- clock & autosave ---------- */
+  let last = Date.now();
+  setInterval(() => {
+    const n = Date.now();
+    if (running && !done && !document.hidden) { elapsed += Math.min(n - last, 2000) / 1000; $('time').textContent = fmt(elapsed); }
+    last = n;
+  }, 500);
+  setInterval(() => { if (running && !done) saveNow(); }, 15000);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) saveNow(); });
+  window.addEventListener('pagehide', () => { saveNow(); });
+
+  /* ---------- theme ---------- */
+  readTheme();
+  new MutationObserver(() => { readTheme(); draw(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { readTheme(); draw(); }); } catch (e) { /* older browsers */ }
+  new ResizeObserver(resize).observe(stage);
+
+  /* ---------- start ---------- */
+  (async () => {
+    try { defaultImg = await loadImage('photo.jpg'); } catch (e) { defaultImg = null; }
+    if (defaultImg) draft = { im: defaultImg, blob: null, isDefault: true, name: 'ポケモン' };
+    else draft = { im: null, blob: null, isDefault: false, name: '' };
+    storageOK = await DB.open();
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* ignore */ }
+    if (storageOK) await migrateV1();
+    resize();
+    let rows = [];
+    if (storageOK) { try { rows = await DB.all('puzzles'); } catch (e) { rows = []; } }
+    rows.sort((a, b) => b.updated - a.updated);
+    const lastRec = rows[0];
+    let opened = false;
+    if (lastRec && !lastRec.done) {
+      opened = await openPuzzle(lastRec);
+      if (opened) toast('つづきからはじめます。', 2500);
+    }
+    if (!opened) openHome();
+  })().catch(() => { try { openHome(); } catch (e) { /* ignore */ } });
+})();
+</script>
+
+</body></html>
