@@ -233,11 +233,11 @@ input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-i
         <div class="row">
           <input id="file" class="sr" type="file" accept="image/*">
           <label class="btn" for="file">写真をえらぶ</label>
-          <button id="useSample" type="button">ポケモンの写真</button>
+          <button id="useSample" type="button">どうぶつの写真</button>
         </div>
         <div>
           <label class="cap" for="pname">なまえ</label>
-          <input id="pname" type="text" maxlength="30" value="ポケモン" autocomplete="off">
+          <input id="pname" type="text" maxlength="30" value="どうぶつ" autocomplete="off">
         </div>
         <div class="grid-in">
           <div>
@@ -313,7 +313,7 @@ input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-i
   let view = { s: 1, ox: 0, oy: 0 }, vw = 0, vh = 0, dpr = 1;
   let elapsed = 0, running = false, done = false, previewOn = false;
   let theme = {};
-  let draft = { im: null, blob: null, isDefault: true, name: 'ポケモン' };
+  let draft = { im: null, blob: null, isDefault: true, name: 'どうぶつ' };
 
   /* ---------- helpers ---------- */
   function rng(a) {
@@ -411,7 +411,7 @@ input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-i
         let placed = 0;
         for (const g of s.z) if (g.p) placed += g.c.length;
         await DB.put('puzzles', {
-          id: 'v1-' + n, name: 'ポケモン', cols: n, rows: n, seed: s.seed, imgId: 'default', thumb: '',
+          id: 'v1-' + n, name: 'どうぶつ', cols: n, rows: n, seed: s.seed, imgId: 'default', thumb: '',
           created: Date.now(), elapsed: s.elapsed || 0, done: !!s.done, placed, updated: Date.now(), z: s.z
         });
       }
@@ -1034,7 +1034,7 @@ input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-i
     } catch (err) { toast('その写真は読み込めませんでした。ほかの写真をためしてください。', 5000); }
     e.target.value = '';
   });
-  $('useSample').addEventListener('click', () => { if (defaultImg) setDraft({ im: defaultImg, blob: null, isDefault: true, name: 'ポケモン' }); });
+  $('useSample').addEventListener('click', () => { if (defaultImg) setDraft({ im: defaultImg, blob: null, isDefault: true, name: 'どうぶつ' }); });
   $('start').addEventListener('click', async () => {
     if (!draft.im) return;
     const c = clampN($('cols').value), r = clampN($('rows').value);
@@ -1090,7 +1090,7 @@ input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-i
   /* ---------- start ---------- */
   (async () => {
     try { defaultImg = await loadImage('photo.jpg'); } catch (e) { defaultImg = null; }
-    if (defaultImg) draft = { im: defaultImg, blob: null, isDefault: true, name: 'ポケモン' };
+    if (defaultImg) draft = { im: defaultImg, blob: null, isDefault: true, name: 'どうぶつ' };
     else draft = { im: null, blob: null, isDefault: false, name: '' };
     storageOK = await DB.open();
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* ignore */ }
